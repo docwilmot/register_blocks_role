@@ -81,14 +81,15 @@ function register_blocks_role_add_block_form($form, &$form_state, $path = '') {
 
 function register_blocks_role_add_block_form_submit($form, &$form_state) {
   $config = config('register_blocks_role.settings');
+  $data = $config->get();
   $path = $form_state['values']['path'];
-  $config[$path] = array (
+  $data[$path] += array (
     'path' => $path,
     'roles' => $form_state['values']['roles'],
     'title' => $form_state['values']['title'],
     'description' => $form_state['values']['description'],
   );
-  $config->save();
+  $config->setData($data);
 }
 
 function register_blocks_role_get_blocks($path = NULL) {
@@ -98,7 +99,7 @@ function register_blocks_role_get_blocks($path = NULL) {
 }
 
 
-function register_blocks_role_select_fields($path = NULL) {
+function register_blocks_role_select_fields($form, &$form_state, $path = NULL) {
   $fields = field_info_instances('user', 'user');
   $options = array();
   foreach ($fields as $field) {
@@ -109,6 +110,10 @@ function register_blocks_role_select_fields($path = NULL) {
   $header = array(
     'label' => t('Field'),
   );
+  $form['path'] = array(
+    '#type' => 'hidden',
+    '#value' => $path,
+  );
   $form['table'] = array(
     '#type' => 'tableselect',
     '#header' => $header,
@@ -118,3 +123,49 @@ function register_blocks_role_select_fields($path = NULL) {
   return $form;
 }
 
+function register_blocks_role_select_fields_submit($form, &$form_state) {
+  $chosen_fields = $form_state['values']['table'];
+  $path = $form_state['values']['path'];
+  $config = config('register_blocks_role.settings');
+  $data = $config->get();
+  $data[$path] += array (
+    'fields' => $chosen_fields,
+  );
+  $config->setData($data);
+}
+
+/**
+ * Implements hook_field_access().
+ */
+function register_blocks_role_field_access($op, $field, $entity_type, $entity, $account) {
+  // Also add a settings switch to ignore this if user prefers to use another 
+  // permissions access module.
+
+  $roles = register_blocks_role_fields();
+  $roles_match = array_intersect_key($roles, $account->roles);
+  if ($entity_type == 'user' && !in_array($field, $roles_match)) {
+    if ($op == 'view' || $op == 'edit') {
+      return false;
+    }
+  }  
+}
+
+function register_blocks_role_fields() {
+  $roles = &backdrop_static(_FUNCTION_);
+  if (empty($roles)) {
+    $config = config('register_blocks_role.settings');
+    $data = $config->get();
+
+    // Build an array of fields allowed by role.
+    foreach ($data as $path) {
+      foreach ($path['roles'] as $role) {
+        foreach ($path['fields'] as $field) {
+          if ($field) {
+            $roles[$role][] = $field;
+          }
+        }
+      }
+    }
+  }
+  return $roles;
+}
