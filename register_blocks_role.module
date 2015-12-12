@@ -1,0 +1,120 @@
+<?php
+/**
+* @file
+* Main module file, creates blocks and preferences
+* config.
+*/
+
+function register_blocks_role_menu() {
+  $items['user_fields'] = array(
+  'title' => 'Tester',
+  'page callback' => 'backdrop_get_form',
+  'page arguments' => array('register_blocks_role_select_fields'),
+  'access callback' => TRUE,
+  'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+* Implements hook_block_info().
+*/
+function register_blocks_role_block_info() {
+  $all_blocks = register_blocks_role_get_blocks();
+  foreach ($all_blocks as $key => $block) {
+    $blocks[$key] = array(
+    'info' => $block['title'],
+    'description' => $block['description'],
+    );
+  }
+
+  return $blocks;
+}
+
+function register_blocks_role_block_view($delta = '', $settings = array(), $contexts = array()) {
+  $blocks = register_blocks_role_get_blocks();
+  if (in_array($block[$delta])) {
+    $block['subject'] = $block[$delta]['title'];
+    $block['content'] = register_blocks_role_block_register_callback($block[$delta]);
+  }
+  return $block;
+}
+
+
+function register_blocks_role_block_register_callback($block) {
+  $reg_form = backdrop_get_form('user_register_form');
+  $output = backdrop_render($reg_form);
+  return $output;
+}
+
+function register_blocks_role_add_block_form($form, &$form_state, $path = '') {
+  // todo account for deleting old path.
+  // Add user role access selection.
+  $form['roles'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('Roles'),
+    '#options' => array_map('check_plain', user_roles()),
+  );
+
+  $form['path'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Path'),
+  );
+  $form['title'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Title'),
+  );
+  $form['description'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Description'),
+  );
+  
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save configuration'),
+  );
+
+  return $form;
+}
+
+function register_blocks_role_add_block_form_submit($form, &$form_state) {
+  $config = config('register_blocks_role.settings');
+  $path = $form_state['values']['path'];
+  $config[$path] = array (
+    'path' => $path,
+    'roles' => $form_state['values']['roles'],
+    'title' => $form_state['values']['title'],
+    'description' => $form_state['values']['description'],
+  );
+  $config->save();
+}
+
+function register_blocks_role_get_blocks($path = NULL) {
+  $config = config('register_blocks_role.settings');
+  $paths = $config->get();
+  return $path ? $paths[$path] : $paths;
+}
+
+
+function register_blocks_role_select_fields($path = NULL) {
+  $fields = field_info_instances('user', 'user');
+  $options = array();
+  foreach ($fields as $field) {
+    $options[] = array(
+      'label' => $field['label']
+    );
+  }
+  $header = array(
+    'label' => t('Field'),
+  );
+  $form['table'] = array(
+    '#type' => 'tableselect',
+    '#header' => $header,
+    '#options' => $options,
+    '#empty' => t('No fields available.'),
+  );
+  return $form;
+}
+

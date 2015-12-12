@@ -1,0 +1,5 @@
+name = "Registration Blocks By Role"
+description = "Creates block registration forms for specified roles."
+backdrop = 1.x
+type = module
+;dependencies[] = autoassignrole
