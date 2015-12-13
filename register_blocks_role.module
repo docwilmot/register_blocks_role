@@ -6,10 +6,37 @@
 */
 
 function register_blocks_role_menu() {
-  $items['user_fields'] = array(
+  $items['admin/config/people/reg-block-fields/%'] = array(
   'title' => 'Tester',
   'page callback' => 'backdrop_get_form',
-  'page arguments' => array('register_blocks_role_select_fields'),
+  'page arguments' => array('register_blocks_role_select_fields', 1),
+  'access callback' => TRUE,
+  'type' => MENU_CALLBACK,
+  );
+  $items['admin/config/people/role-block'] = array(
+  'title' => 'List role blocks',
+  'page callback' => 'register_blocks_role_list',
+  'access callback' => TRUE,
+  'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/config/people/role-block/block'] = array(
+  'title' => 'Add role block',
+  'page callback' => 'backdrop_get_form',
+  'page arguments' => array('register_blocks_role_add_block_form'),
+  'access callback' => TRUE,
+  'type' => MENU_LOCAL_ACTION,
+  );
+  $items['admin/config/people/role-block/block/%'] = array(
+  'title' => 'Add role block',
+  'page callback' => 'backdrop_get_form',
+  'page arguments' => array('register_blocks_role_add_block_form', 5),
+  'access callback' => TRUE,
+  'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/config/people/role-block/block/%/delete'] = array(
+  'title' => 'Add role block',
+  'page callback' => 'backdrop_get_form',
+  'page arguments' => array('register_blocks_role_delete_block_form', 5),
   'access callback' => TRUE,
   'type' => MENU_CALLBACK,
   );
@@ -34,9 +61,9 @@ function register_blocks_role_block_info() {
 
 function register_blocks_role_block_view($delta = '', $settings = array(), $contexts = array()) {
   $blocks = register_blocks_role_get_blocks();
-  if (in_array($block[$delta])) {
+  if (!empty($blocks[$delta])) {
     $block['subject'] = $block[$delta]['title'];
-    $block['content'] = register_blocks_role_block_register_callback($block[$delta]);
+    $block['content'] = register_blocks_role_block_register_callback($blocks[$delta]);
   }
   return $block;
 }
@@ -44,30 +71,117 @@ function register_blocks_role_block_view($delta = '', $settings = array(), $cont
 
 function register_blocks_role_block_register_callback($block) {
   $reg_form = backdrop_get_form('user_register_form');
+  foreach (array_keys(field_info_instances('user', 'user')) as $field_name) {
+    if(!in_array($field_name, $block['fields'])) {
+      $reg_form[$field_name]['#access'] = FALSE;
+    }
+  }
+  dpm($reg_form);
   $output = backdrop_render($reg_form);
   return $output;
 }
 
+function register_blocks_role_list() {
+  $blocks = register_blocks_role_get_blocks();
+  $header = array(t('Title'), t('Description'), t('Operations'));
+  foreach ($blocks as $row) {
+    $operations = array(
+      '#type' => 'dropbutton',
+      '#links' => array(
+        'view' => array(
+          'title' => t('Edit'),
+          'href' => 'admin/config/people/role-block/block/' . $row['path'],
+        ),
+        'delete' => array(
+          'title' => t('Delete'),
+          'href' => 'admin/config/people/role-block/block/' . $row['path'] . '/delete',
+        ),
+      ),
+    );
+    $rows[] = array(
+    array('data' => $row['title'], 'class' => array('title')),
+    array('data' => $row['description'], 'class' => array('description')),
+    array('data' => backdrop_render($operations), 'class' => array('type')),
+    );
+  }
+  $output = theme('table', array('header' => $header, 'rows' => $rows));
+  return $output;
+}
+
+function register_blocks_role_delete_block_form($form, &$form_state, $block) {
+	$form = array();
+	$form['block'] = array(
+		'#type' => 'value',
+		'#value' => $block,
+	);
+
+	$form['delete_layout'] = array(
+		'#type' => 'checkbox',
+		'#title' => t('Also delete layout'),
+	);
+
+	return confirm_form(
+		$form,
+		t('Are you sure you want to delete this block?'),
+		'admin/config/people/role-block',
+		t('This action cannot be undone.'),
+		t('Delete'),
+		t('Cancel')
+	);
+
+	return $form;
+}
+
+// Delete a block.
+function register_blocks_role_delete_block_form_submit($form, &$form_state) {
+  $path = $form_state['values']['block'];
+  $config = config('register_blocks_role.settings');
+    
+  $data = $config->get();
+  unset($data[$path]);
+
+  $config->setData($data);
+  $config->save();
+  backdrop_set_message(t('Block %block has been deleted.', array('%block' => $path)));
+  // Delete layouts too
+  if ($form_state['values']['block']) {
+    $layout = layout_load($path);
+    $layout->delete();
+    backdrop_set_message(t('Layout %block has been deleted.', array('%block' => $path)));
+  }
+
+  $form_state['redirect'] = 'admin/config/people/role-block';
+}
+
 function register_blocks_role_add_block_form($form, &$form_state, $path = '') {
-  // todo account for deleting old path.
-  // Add user role access selection.
+  if ($path) {
+    $block = register_blocks_role_get_blocks($path);
+    backdrop_set_title(t('Edit Role Block'));
+  }
+  $form['old_path'] = array(
+    '#type' => 'value',
+    '#value' => $path,
+  );
   $form['roles'] = array(
     '#type' => 'checkboxes',
-    '#title' => t('Roles'),
+    '#title' => t('Roles to be granted'),
     '#options' => array_map('check_plain', user_roles()),
+    '#default_value' => isset($block['roles']) ? $block['roles'] : '',
   );
-
   $form['path'] = array(
     '#type' => 'textfield',
     '#title' => t('Path'),
+    '#default_value' => isset($block['path']) ? $block['path'] : '',
   );
   $form['title'] = array(
     '#type' => 'textfield',
     '#title' => t('Title'),
+    '#default_value' => isset($block['title']) ? $block['title'] : '',
   );
   $form['description'] = array(
     '#type' => 'textfield',
     '#title' => t('Description'),
+    '#default_value' => isset($block['description']) ? $block['description'] : '',
   );
   
   $form['actions'] = array('#type' => 'actions');
@@ -83,13 +197,36 @@ function register_blocks_role_add_block_form_submit($form, &$form_state) {
   $config = config('register_blocks_role.settings');
   $data = $config->get();
   $path = $form_state['values']['path'];
-  $data[$path] += array (
+  $old_path = $form_state['values']['old_path'];
+  $newdata = array (
     'path' => $path,
-    'roles' => $form_state['values']['roles'],
+    'roles' => array_filter($form_state['values']['roles']),
     'title' => $form_state['values']['title'],
     'description' => $form_state['values']['description'],
   );
+  $data[$path] = array_merge((array)$data[$path], $newdata);
+  if ($path != $old_path) {
+    unset($data[$old_path]);
+  }
+  dpm($data);
   $config->setData($data);
+  $config->save();
+  
+  $layout = register_blocks_role_create_layout($data[$path]);
+  $form_state['redirect'] = 'admin/config/people/reg-block-fields/' . $path;
+}
+
+function register_blocks_role_create_layout($data) {
+  $layout = new Layout();
+  $layout->setPath($data['path']);
+  $layout->title = $data['title'];
+  $layout->name = $data['path'];
+  $layout->description = $data['description'];
+  $layout->layout = 'one_column';
+  $layout->module = 'register_blocks_role';
+  
+  $layout->addBlock('register_blocks_role', $data['path'], 'content');
+  $layout->save();
 }
 
 function register_blocks_role_get_blocks($path = NULL) {
@@ -102,8 +239,8 @@ function register_blocks_role_get_blocks($path = NULL) {
 function register_blocks_role_select_fields($form, &$form_state, $path = NULL) {
   $fields = field_info_instances('user', 'user');
   $options = array();
-  foreach ($fields as $field) {
-    $options[] = array(
+  foreach ($fields as $field_name => $field) {
+    $options[$field_name] = array(
       'label' => $field['label']
     );
   }
@@ -120,6 +257,12 @@ function register_blocks_role_select_fields($form, &$form_state, $path = NULL) {
     '#options' => $options,
     '#empty' => t('No fields available.'),
   );
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save configuration'),
+  );
+
   return $form;
 }
 
@@ -129,9 +272,12 @@ function register_blocks_role_select_fields_submit($form, &$form_state) {
   $config = config('register_blocks_role.settings');
   $data = $config->get();
   $data[$path] += array (
-    'fields' => $chosen_fields,
+    'fields' => array_filter($chosen_fields),
   );
+  dpm($chosen_fields);
+  dpm($data);
   $config->setData($data);
+  $config->save();
 }
 
 /**
@@ -141,18 +287,18 @@ function register_blocks_role_field_access($op, $field, $entity_type, $entity, $
   // Also add a settings switch to ignore this if user prefers to use another 
   // permissions access module.
 
-  $roles = register_blocks_role_fields();
-  $roles_match = array_intersect_key($roles, $account->roles);
-  if ($entity_type == 'user' && !in_array($field, $roles_match)) {
-    if ($op == 'view' || $op == 'edit') {
-      return false;
-    }
-  }  
+  // $roles = register_blocks_role_fields();
+  // $roles_match = array_intersect_key($roles, $account->roles);
+  // if ($entity_type == 'user' && !in_array($field, $roles_match)) {
+    // if ($op == 'view' || $op == 'edit') {
+      // return false;
+    // }
+  // }  
 }
 
 function register_blocks_role_fields() {
   $roles = &backdrop_static(_FUNCTION_);
-  if (empty($roles)) {
+  if (!isset($roles)) {
     $config = config('register_blocks_role.settings');
     $data = $config->get();
 
@@ -168,4 +314,15 @@ function register_blocks_role_fields() {
     }
   }
   return $roles;
+}
+
+/**
+ * Implements hook_config_info().
+ */
+function register_blocks_role_config_info() {
+  $prefixes['register_blocks_role.settings'] = array(
+    'label' => t('Register Blocks by Role settings'),
+    'group' => t('Rregister Blocks'),
+  );
+  return $prefixes;
 }
